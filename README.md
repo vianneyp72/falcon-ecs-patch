@@ -200,3 +200,7 @@ EC2 launch type, ARM64 tasks, rewriting Terraform or CloudFormation source, auto
 - [CrowdStrike Terraform module for ECS Fargate](https://github.com/CrowdStrike/terraform-aws-ecs-fargate)
 - [falcon-container-sensor-pull](https://github.com/CrowdStrike/falcon-scripts/tree/main/bash/containers/falcon-container-sensor-pull)
 - Companion lab: ECS Fargate task patching in falcon-cloud-security-labs
+
+## License
+
+MIT. See [LICENSE](LICENSE).
