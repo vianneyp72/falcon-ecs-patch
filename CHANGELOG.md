@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Fix ShellCheck findings (trap quoting, service ARN splitting). No behavior change.
+
 ## 0.2.0
 
 - `patch --file task-definition.json [--output patched.json]` patches a task definition kept in Git. It never registers anything, so it fits any pipeline (GitHub Actions, Terraform, CDK).

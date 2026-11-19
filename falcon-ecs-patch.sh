@@ -3,7 +3,7 @@
 # Wraps the official patching utility that ships inside the falcon-container image.
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.2.1"
 INIT_NAME="crowdstrike-falcon-init-container"
 SENSOR_REPO="falcon-container"   # override with --sensor-repo (e.g. falcon-sensor/falcon-container)
 PULL_SCRIPT_URL="https://github.com/CrowdStrike/falcon-scripts/releases/latest/download/falcon-container-sensor-pull.sh"
@@ -183,7 +183,9 @@ cmd_setup() {
     || aws ecr create-repository --repository-name "$SENSOR_REPO" --region "$REGION" >/dev/null
   ecr_login
 
-  local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+  local tmp; tmp=$(mktemp -d)
+  # shellcheck disable=SC2064  # expand now: $tmp is function-local and out of scope when EXIT fires
+  trap "rm -rf '$tmp'" EXIT
   log "Downloading the CrowdStrike sensor pull script..."
   curl -fsSL "$PULL_SCRIPT_URL" -o "$tmp/pull.sh" || die "Could not download the pull script."
   local cloud=(); [ -z "$FALCON_CLOUD" ] || cloud=(--region "$FALCON_CLOUD")
@@ -208,7 +210,7 @@ audit_rows() {
   arns=$(aws ecs list-services --cluster "$CLUSTER" --region "$REGION" --query 'serviceArns' --output text) \
     || die "Could not list services in cluster '$CLUSTER' ($REGION). Check the cluster name, region, and credentials."
   [ -n "$arns" ] && [ "$arns" != "None" ] || return 0
-  printf '%s\n' $arns | xargs -n 10 aws ecs describe-services --cluster "$CLUSTER" --region "$REGION" --output json --services \
+  tr '\t' '\n' <<<"$arns" | xargs -n 10 aws ecs describe-services --cluster "$CLUSTER" --region "$REGION" --output json --services \
     | jq -c '.services[]' | while IFS= read -r svc; do
       local name td td_json launch arch status sensor
       name=$(jq -r '.serviceName' <<<"$svc")
