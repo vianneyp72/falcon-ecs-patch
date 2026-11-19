@@ -1,0 +1,17 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: bash -n falcon-ecs-patch.sh
+      - name: ShellCheck
+        run: shellcheck falcon-ecs-patch.sh tests/run.sh
+      - name: Tests
+        run: bash tests/run.sh
