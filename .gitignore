@@ -1,0 +1,11 @@
+# Local working files produced by the patcher
+*.original.json
+*.patched.json
+taskdefinition*.json
+patched/
+
+# Secrets
+.env
+*.pem
+
+.DS_Store
