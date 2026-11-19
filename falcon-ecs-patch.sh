@@ -3,7 +3,7 @@
 # Wraps the official patching utility that ships inside the falcon-container image.
 set -euo pipefail
 
-VERSION="0.2.1"
+VERSION="0.2.2"
 INIT_NAME="crowdstrike-falcon-init-container"
 SENSOR_REPO="falcon-container"   # override with --sensor-repo (e.g. falcon-sensor/falcon-container)
 PULL_SCRIPT_URL="https://github.com/CrowdStrike/falcon-scripts/releases/latest/download/falcon-container-sensor-pull.sh"
@@ -49,7 +49,7 @@ Options:
   --falconctl-opts S    Sensor options baked into the task, e.g. "--tags=prod,web"
   --falcon-cloud C      setup only: us-1, us-2, eu-1, us-gov-1, us-gov-2 (default: auto)
   --ca-bundle FILE      PEM bundle to trust when reading app image metadata (corporate TLS proxy).
-                        Must be a FULL bundle (system roots plus your proxy CA). Default: $SSL_CERT_FILE
+                        Must be a FULL bundle (system roots plus your proxy CA). Default: \$SSL_CERT_FILE
   --out DIR             Where original and patched JSON are written (default: ./falcon-ecs-patch-out)
   --deploy              Register the patched revision (and update the service with --service/--all).
                         The new task definition ARN is printed on stdout

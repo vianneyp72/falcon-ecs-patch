@@ -21,7 +21,7 @@ Scope: ECS on **Fargate**, **X86_64** tasks, images in **ECR**.
 Pin a release and verify its checksum. Do not run `main`.
 
 ```bash
-VERSION=v0.2.1
+VERSION=v0.2.2
 BASE=https://github.com/vianneyp72/falcon-ecs-patch/releases/download/$VERSION
 curl -fsSLO $BASE/falcon-ecs-patch.sh
 curl -fsSLO $BASE/falcon-ecs-patch.sh.sha256

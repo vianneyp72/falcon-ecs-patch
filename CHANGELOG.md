@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- Fix `--help` crashing when `SSL_CERT_FILE` is unset.
+
 ## 0.2.1
 
 - Fix ShellCheck findings (trap quoting, service ARN splitting). No behavior change.
