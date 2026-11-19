@@ -6,7 +6,9 @@ This is a thin, non-interactive wrapper around the official patching utility tha
 
 It adds what the raw utility leaves to you: find unprotected services, export and clean the task definition, build the registry pull token, show a diff, register the new revision, roll the service, and print the rollback command.
 
-Scope for v0.1: ECS on **Fargate**, **X86_64** tasks, images in **ECR**.
+Scope: ECS on **Fargate**, **X86_64** tasks, images in **ECR**.
+
+> **Support status:** This is a community-maintained helper, not an official CrowdStrike product, and it is not covered by CrowdStrike support. It automates the officially documented patching utility and never replaces it: if you cannot use the script, run the utility directly (see the [official documentation](#references) and the companion lab's by-hand section). Read the script before you run it; it is one bash file.
 
 ## Requirements
 
@@ -19,11 +21,11 @@ Scope for v0.1: ECS on **Fargate**, **X86_64** tasks, images in **ECR**.
 Pin a release and verify its checksum. Do not run `main`.
 
 ```bash
-VERSION=v0.1.0
+VERSION=v0.2.0
 BASE=https://github.com/vianneyp72/falcon-ecs-patch/releases/download/$VERSION
 curl -fsSLO $BASE/falcon-ecs-patch.sh
 curl -fsSLO $BASE/falcon-ecs-patch.sh.sha256
-shasum -a 256 -c falcon-ecs-patch.sh.sha256
+(sha256sum -c falcon-ecs-patch.sh.sha256 2>/dev/null || shasum -a 256 -c falcon-ecs-patch.sh.sha256)
 chmod +x falcon-ecs-patch.sh
 ```
 
@@ -35,7 +37,7 @@ To operationalize, vendor the script at a pinned tag into your own repo (or `git
 export AWS_REGION=us-east-1
 export FALCON_CID=<your-cid-with-checksum>
 export FALCON_CLIENT_ID=<api-client-id>
-export FALCON_CLIENT_SECRET=<api-client-secret>
+read -rs -p "Falcon API client secret: " FALCON_CLIENT_SECRET && export FALCON_CLIENT_SECRET
 
 # 1. Once per account and region: copy the sensor image into your ECR
 ./falcon-ecs-patch.sh setup
@@ -52,12 +54,14 @@ export FALCON_CLIENT_SECRET=<api-client-secret>
 
 `setup` prints the `--sensor-image` URI. If you skip the flag, `patch` uses the newest tag in the `falcon-container` ECR repo.
 
+Before you deploy to a real service, read [Before you deploy](#before-you-deploy).
+
 ## Commands
 
 | Command | What it does |
 |---------|--------------|
 | `setup` | Copies the Falcon Container sensor image into ECR with the official pull script. Run once per account and region. |
-| `audit` | Read-only. Marks each service in a cluster PROTECTED or UNPROTECTED, with launch type and CPU architecture. |
+| `audit` | Read-only. Marks each service in a cluster PROTECTED or UNPROTECTED, with launch type, CPU architecture, and the sensor tag it runs. |
 | `patch` | Exports the task definition, patches it with the official utility, prints a diff, writes `<out>/<family>/rev<N>.original.json` and `.patched.json`. Dry run unless `--deploy`. |
 
 ### patch targets
@@ -65,8 +69,10 @@ export FALCON_CLIENT_SECRET=<api-client-secret>
 | Flag | Behavior |
 |------|----------|
 | `--service S` | Patch the task definition the service runs, then (with `--deploy`) update the service. |
+| `--service S --from-revision N` | Patch revision `N` of the service's family instead of the one it runs. Use it to move to a newer sensor. See [Upgrading the sensor](#upgrading-the-sensor). |
 | `--all` | Patch every unprotected Fargate service in the cluster. |
-| `--family F` | Patch the latest revision of a family. Registers a revision but updates no service. Use this in CI. |
+| `--family F[:REV]` | Patch the latest (or a specific) revision of a family. With `--deploy` it registers a revision and prints its ARN on stdout; it updates no service. |
+| `--file FILE` | Patch a task definition JSON file, for example one kept in Git. Registers nothing; writes the patched JSON to `--output`. Use this when your pipeline owns the registration. |
 
 ### Options
 
@@ -79,8 +85,9 @@ export FALCON_CLIENT_SECRET=<api-client-secret>
 | `--skip-container N` | Do not inject into container `N`. Repeatable. |
 | `--falconctl-opts S` | Sensor options baked into the task, e.g. `--tags=prod,web`. Tags allow letters, numbers, `-`, `_`, `/` only. No spaces. |
 | `--ca-bundle FILE` | Full PEM bundle (system roots plus your proxy CA). See [Corporate TLS proxy](#corporate-tls-proxy). |
-| `--out DIR` | Output directory. Default `./falcon-ecs-patch-out`. |
-| `--deploy` | Register the patched revision and update the service. |
+| `--output FILE` | With `--file`: where to write the patched JSON. |
+| `--out DIR` | Output directory for original and patched JSON. Default `./falcon-ecs-patch-out`. |
+| `--deploy` | Register the patched revision and update the service. The new task definition ARN is printed on stdout. |
 | `--yes` | Skip the `--deploy` confirmation prompt (needed in CI). |
 | `--fail-on-unprotected` | `audit` exits 3 if any unprotected Fargate service exists. |
 
@@ -94,6 +101,26 @@ The Falcon client secret is read from `FALCON_CLIENT_SECRET` only. Flags show up
 | 1 | Error |
 | 2 | Usage error |
 | 3 | `audit --fail-on-unprotected` found unprotected services |
+
+## Before you deploy
+
+- **Infrastructure as code.** If Terraform, CDK, or CloudFormation owns the task definition, a revision registered with `--deploy` is overwritten on the next apply and the sensor silently disappears. Patch where the definition is authored instead: use `patch --file` in your pipeline and register the output, or use CrowdStrike's [Terraform module](https://github.com/CrowdStrike/terraform-aws-ecs-fargate).
+- **Network.** Tasks need a route to the Falcon cloud on TLS 443: a public IP or a NAT gateway. Private subnets with no egress will start the task but never register a sensor. `patch` warns when a service has `assignPublicIp: DISABLED`.
+- **Rollout.** `patch` prints the service's minimum and maximum healthy percent, task size, and whether the deployment circuit breaker is on. Turn the circuit breaker on so a failed rollout rolls back by itself. A service with 100% minimum healthy needs capacity for the extra tasks during the rollout.
+- **Resources.** The sensor shares the task's CPU and memory with your app. Check task size and utilization on a non-production service first.
+- **Deployment controllers.** For services using `CODE_DEPLOY` (blue/green) or `EXTERNAL`, `patch` registers the revision but does not update the service. Deploy the printed ARN with your own process.
+
+## Upgrading the sensor
+
+A task definition that already has the init container is skipped, so re-running `patch` does not change the sensor version. To move to a newer sensor, copy the new image, then patch the original, unpatched revision again:
+
+```bash
+./falcon-ecs-patch.sh setup
+./falcon-ecs-patch.sh audit --cluster my-cluster          # SENSOR column shows what runs today
+./falcon-ecs-patch.sh patch --cluster my-cluster --service my-service --from-revision 1 --deploy
+```
+
+`--from-revision` takes the revision that has no sensor (revision 1 in this example). With `--file`, patch your unpatched source file again.
 
 ## What gets changed in a task definition
 
@@ -111,6 +138,10 @@ The patched JSON contains your CID in `FALCONCTL_OPTS` and the diff prints it. A
 aws ecs update-service --cluster my-cluster --service my-service \
   --task-definition arn:aws:ecs:us-east-1:111122223333:task-definition/my-service:1 --region us-east-1
 ```
+
+## Multiple accounts and regions
+
+`setup` copies the sensor into one account and region. Run it, and `patch`, once per account and region, with credentials for that account (`AWS_PROFILE` or a role per job). Tasks pull the image with the task execution role, so the image has to be reachable from where the task runs. To share one ECR repository across accounts, add a repository policy that allows `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`, and `ecr:BatchCheckLayerAvailability` for the other accounts' execution roles, and pass `--sensor-image` with the full URI.
 
 ## Permissions
 
@@ -146,17 +177,26 @@ For application images outside ECR, set `IMAGE_PULL_TOKEN` to a base64-encoded D
 
 ## CI/CD
 
-Examples live in [`examples/`](examples):
+Pick the pattern that matches how you deploy:
 
-- `github-actions-patch.yml` patches a task definition before it is registered.
+| You deploy with | Use |
+|-----------------|-----|
+| A task definition JSON in Git, registered by your pipeline | `patch --file in.json --output out.json`, then register `out.json` |
+| Terraform, CDK, or CloudFormation | Patch the source or use the Terraform module. Do not register revisions behind its back |
+| A revision already registered in ECS | `patch --family F --deploy --yes`, then point the service at the ARN printed on stdout |
+
+Store `FALCON_CID`, `FALCON_CLIENT_ID`, and `FALCON_CLIENT_SECRET` in your CI secret store, and use short-lived AWS credentials (OIDC role). Examples live in [`examples/`](examples):
+
+- `github-actions-patch.yml` patches a task definition file and deploys the patched file.
 - `github-actions-audit.yml` fails a scheduled job when an unprotected service appears.
 
-## Not in v0.1
+## Not supported yet
 
-Sensor upgrade in place, EC2 launch type, ARM64 tasks, CloudFormation input.
+EC2 launch type, ARM64 tasks, rewriting Terraform or CloudFormation source, automatic sensor upgrades (see [Upgrading the sensor](#upgrading-the-sensor) for the manual path).
 
 ## References
 
 - [Deploy Falcon Container Sensor for Linux on ECS Fargate](https://docs.crowdstrike.com/r/en-US/iopiipqy/ba83eb6c)
+- [CrowdStrike Terraform module for ECS Fargate](https://github.com/CrowdStrike/terraform-aws-ecs-fargate)
 - [falcon-container-sensor-pull](https://github.com/CrowdStrike/falcon-scripts/tree/main/bash/containers/falcon-container-sensor-pull)
 - Companion lab: ECS Fargate task patching in falcon-cloud-security-labs

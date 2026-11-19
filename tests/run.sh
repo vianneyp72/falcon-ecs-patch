@@ -14,5 +14,10 @@ check() { # name expected_rc actual_rc
 env -u AWS_REGION -u AWS_DEFAULT_REGION "$SCRIPT" audit --cluster c >/dev/null 2>&1; check "missing region" 2 $?
 "$SCRIPT" audit --region us-east-1 >/dev/null 2>&1;                check "audit needs cluster" 2 $?
 "$SCRIPT" audit --cluster c --region us-east-1 --client-secret x >/dev/null 2>&1; check "client secret flag rejected" 2 $?
+"$SCRIPT" patch --region us-east-1 --cid x >/dev/null 2>&1;         check "patch needs a target" 2 $?
+"$SCRIPT" patch --region us-east-1 --cid x --file a.json --family f >/dev/null 2>&1; check "file and family are exclusive" 2 $?
+"$SCRIPT" patch --region us-east-1 --cid x --file a.json --deploy >/dev/null 2>&1; check "file rejects deploy" 2 $?
+"$SCRIPT" patch --region us-east-1 --cid x --family f --from-revision 1 >/dev/null 2>&1; check "from-revision needs service" 2 $?
+"$SCRIPT" patch --region us-east-1 --cid x --family f --output o.json >/dev/null 2>&1; check "output needs file" 2 $?
 
 exit "$fail"

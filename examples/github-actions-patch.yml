@@ -1,12 +1,15 @@
-# Patch a task definition family before your deploy job registers it.
+# Patch a task definition that lives in Git, then hand the patched file to your normal deploy.
 # Pin the script version and verify its checksum.
+#
+# Pick the pattern that matches how you deploy:
+#   A) The task definition JSON is in your repo  -> patch --file (this workflow)
+#   B) The revision is already registered in ECS  -> patch --family F[:REV] --deploy --yes
+#      (prints the new task definition ARN on stdout; point your service at it)
 name: patch-ecs-task
 on:
   workflow_dispatch:
-    inputs:
-      family:
-        description: Task definition family to patch
-        required: true
+  pull_request:
+    paths: ["ecs/task-definition.json"]
 
 permissions:
   id-token: write
@@ -18,8 +21,9 @@ jobs:
     env:
       AWS_REGION: us-east-1
       FALCON_CID: ${{ secrets.FALCON_CID }}
-      VERSION: v0.1.0
+      VERSION: v0.2.0
     steps:
+      - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -31,5 +35,13 @@ jobs:
           curl -fsSLO $base/falcon-ecs-patch.sh.sha256
           sha256sum -c falcon-ecs-patch.sh.sha256
           chmod +x falcon-ecs-patch.sh
-      - name: Patch and register
-        run: ./falcon-ecs-patch.sh patch --family "${{ inputs.family }}" --deploy --yes
+      - name: Patch the task definition file
+        run: ./falcon-ecs-patch.sh patch --file ecs/task-definition.json --output ecs/task-definition.patched.json
+      - name: Register and deploy the patched file
+        # Replace with your normal deploy step. This is the stock AWS action:
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ecs/task-definition.patched.json
+          service: my-service
+          cluster: my-cluster
+          wait-for-service-stability: true

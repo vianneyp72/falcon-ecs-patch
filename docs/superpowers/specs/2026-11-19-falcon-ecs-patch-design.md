@@ -54,11 +54,11 @@ Exit codes: 0 ok, 1 error, 2 usage, 3 `audit --fail-on-unprotected` found unprot
 - Challenges lead with adoption: CI step before `register-task-definition`, scheduled `audit --fail-on-unprotected`, rollback by revision.
 - Lab never depends on the script alone: the raw steps work if the repo disappears.
 
-## Validation plan (live, a test cluster)
+## Validation plan (live, a test cluster in us-east-1)
 
-Service `acme-web` runs unmodified nginx on Fargate, no entrypoint or command set, ECS Exec off, revision 1 is the rollback target.
+Service the test service runs unmodified nginx on Fargate, no entrypoint or command set, ECS Exec off, revision 1 is the rollback target.
 
-1. `audit` shows `acme-web` UNPROTECTED.
+1. `audit` shows the test service UNPROTECTED.
 2. `patch` dry run prints a diff and changes nothing.
 3. `patch --deploy` registers revision 2 and rolls the service. Init container exits 0, host appears in Falcon by Pod ID.
 4. Second `patch` is a no-op. `audit` shows PROTECTED.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- `patch --file task-definition.json [--output patched.json]` patches a task definition kept in Git. It never registers anything, so it fits any pipeline (GitHub Actions, Terraform, CDK).
+- `patch --service S --from-revision N` patches an unpatched revision with the newest sensor image. This is the sensor upgrade path.
+- `patch --family F[:REV]` accepts a specific revision. `--deploy` now prints the new task definition ARN on stdout.
+- `audit` shows the sensor tag each service runs.
+- `patch` prints the service rollout settings and task size, warns when the circuit breaker is off, and does not update services that use the CODE_DEPLOY or EXTERNAL deployment controller.
+
 ## 0.1.0
 
 - `setup`, `audit`, `patch` commands for ECS Fargate (X86_64, ECR).

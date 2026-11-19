@@ -9,3 +9,4 @@ patched/
 *.pem
 
 .DS_Store
+falcon-ecs-patch-out/
