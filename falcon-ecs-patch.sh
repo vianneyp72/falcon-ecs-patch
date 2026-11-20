@@ -409,10 +409,19 @@ cmd_patch() {
       patch_one "$td" "$SERVICE"
     fi
   else
-    audit_rows | awk -F'\t' '$5=="UNPROTECTED"{print $1}' | while IFS= read -r s; do
-      local td; td=$(aws ecs describe-services --cluster "$CLUSTER" --services "$s" --region "$REGION" --query 'services[0].taskDefinition' --output text)
-      patch_one "$td" "$s"
-    done
+    local rows names; rows=$(audit_rows) || exit 1
+    names=$(awk -F'\t' '$5=="UNPROTECTED"{print $1}' <<<"$rows")
+    if [ -z "$rows" ]; then
+      log "No services found in cluster '$CLUSTER'."
+    elif [ -z "$names" ]; then
+      local ok="OK"; if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then ok=$'\033[32m\xe2\x9c\x93\033[0m'; else ok=$'\xe2\x9c\x93'; fi
+      log "$ok All Fargate services in cluster '$CLUSTER' are protected. Nothing to patch."
+    else
+      while IFS= read -r s; do
+        local td; td=$(aws ecs describe-services --cluster "$CLUSTER" --services "$s" --region "$REGION" --query 'services[0].taskDefinition' --output text)
+        patch_one "$td" "$s"
+      done <<<"$names"
+    fi
   fi
 }
 
