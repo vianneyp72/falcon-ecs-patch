@@ -3,12 +3,13 @@
 # Wraps the official patching utility that ships inside the falcon-container image.
 set -euo pipefail
 
-VERSION="0.2.3"
+VERSION="0.2.4"
 INIT_NAME="crowdstrike-falcon-init-container"
 SENSOR_REPO="falcon-container"   # override with --sensor-repo (e.g. falcon-sensor/falcon-container)
 PULL_SCRIPT_URL="https://github.com/CrowdStrike/falcon-scripts/releases/latest/download/falcon-container-sensor-pull.sh"
 
 log() { printf '%s\n' "$*" >&2; }
+ok_mark() { if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then printf '\033[32m\xe2\x9c\x93\033[0m' ; else printf '\xe2\x9c\x93'; fi; }
 die() { log "ERROR: $*"; exit 1; }
 usage_die() { log "ERROR: $*"; log "Run '$(basename "$0") --help' for usage."; exit 2; }
 
@@ -237,7 +238,11 @@ cmd_audit() {
   { printf 'SERVICE\tTASK-DEFINITION\tLAUNCH\tARCH\tSTATUS\tSENSOR\n'; printf '%s\n' "$rows"; } | column -t -s "$(printf '\t')"
   local n; n=$(printf '%s\n' "$rows" | awk -F'\t' '$5=="UNPROTECTED"' | wc -l | tr -d ' ')
   log ""
-  log "$n unprotected Fargate service(s)."
+  if [ "$n" -eq 0 ]; then
+    log "$(ok_mark) All Fargate services in cluster '$CLUSTER' are protected."
+  else
+    log "$n unprotected Fargate service(s)."
+  fi
   if [ "$FAIL_UNPROTECTED" -eq 1 ] && [ "$n" -gt 0 ]; then exit 3; fi
 }
 
@@ -267,7 +272,7 @@ check_execution_role() { # td_json
     --query 'EvaluationResults[].EvalDecision' --output text 2>/dev/null || true)
   if [ -z "$decision" ]; then
     log "  WARN  could not check ECR pull access for ${role##*/} (needs iam:SimulatePrincipalPolicy). Confirm it can pull from ECR."
-  elif printf '%s' "$decision" | grep -qv allowed; then
+  elif printf '%s' "$decision" | tr '\t' '\n' | grep -qv '^allowed$'; then
     die "Execution role ${role##*/} cannot pull from ECR repo '$SENSOR_REPO'. Attach AmazonECSTaskExecutionRolePolicy."
   fi
 }
@@ -294,7 +299,7 @@ patch_one() { # td_ref (family[:rev]|arn)  svc_name_or_empty  [file]
   jq -e '(.requiresCompatibilities // []) | index("FARGATE") != null' <<<"$td_json" >/dev/null \
     || die "$label is not Fargate-compatible (requiresCompatibilities must include FARGATE). This tool supports ECS on Fargate only."
   if [ "$(jq -r '.runtimePlatform.cpuArchitecture // "X86_64"' <<<"$td_json")" = "ARM64" ]; then
-    die "$label runs on ARM64 (Graviton). v0.1 supports X86_64 only."
+    die "$label runs on ARM64 (Graviton). Only X86_64 task definitions are supported."
   fi
   if [ -n "$src_file" ]; then
     jq -e '.executionRoleArn // empty' <<<"$td_json" >/dev/null \
@@ -385,7 +390,23 @@ cmd_patch() {
   [ -z "$FILE" ] || [ "$DEPLOY" -eq 0 ] || usage_die "--file never registers anything. Drop --deploy and register the --output file with your pipeline."
   [ -z "$OUTPUT" ] || [ -n "$FILE" ] || usage_die "--output works with --file"
   if [ -n "$SERVICE" ] || [ "$ALL" -eq 1 ]; then [ -n "$CLUSTER" ] || usage_die "--service and --all need --cluster"; fi
-  init_aws; need docker; ecr_login
+  init_aws
+  local names=""
+  if [ "$ALL" -eq 1 ]; then
+    local rows arm; rows=$(audit_rows) || exit 1
+    if [ -z "$rows" ]; then
+      log "No services found in cluster '$CLUSTER'."; return 0
+    fi
+    names=$(awk -F'\t' '$5=="UNPROTECTED" && $4!="ARM64"{print $1}' <<<"$rows")
+    arm=$(awk -F'\t' '$5=="UNPROTECTED" && $4=="ARM64"{print $1}' <<<"$rows" | paste -sd, -)
+    [ -z "$arm" ] || log "Skipping ARM64 service(s), which are not supported: $arm"
+    if [ -z "$names" ]; then
+      [ -n "$arm" ] || log "$(ok_mark) All Fargate services in cluster '$CLUSTER' are protected. Nothing to patch (run 'audit' to see each service)."
+      [ -z "$arm" ] || log "Nothing else to patch."
+      return 0
+    fi
+  fi
+  need docker; ecr_login
   [ -n "$SENSOR_IMAGE" ] || SENSOR_IMAGE=$(latest_sensor_image)
   sensor_has_amd64 "$SENSOR_IMAGE" \
     || die "Sensor image $SENSOR_IMAGE has no linux/amd64 build, which Fargate x86_64 tasks need (often a single-arch arm64 copy made on Apple Silicon). Re-copy it into a new repo: $(basename "$0") setup --region $REGION --sensor-repo <new-name>/falcon-container"
@@ -409,19 +430,10 @@ cmd_patch() {
       patch_one "$td" "$SERVICE"
     fi
   else
-    local rows names; rows=$(audit_rows) || exit 1
-    names=$(awk -F'\t' '$5=="UNPROTECTED"{print $1}' <<<"$rows")
-    if [ -z "$rows" ]; then
-      log "No services found in cluster '$CLUSTER'."
-    elif [ -z "$names" ]; then
-      local ok="OK"; if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then ok=$'\033[32m\xe2\x9c\x93\033[0m'; else ok=$'\xe2\x9c\x93'; fi
-      log "$ok All Fargate services in cluster '$CLUSTER' are protected. Nothing to patch."
-    else
-      while IFS= read -r s <&3; do
-        local td; td=$(aws ecs describe-services --cluster "$CLUSTER" --services "$s" --region "$REGION" --query 'services[0].taskDefinition' --output text)
-        patch_one "$td" "$s"
-      done 3<<<"$names"
-    fi
+    while IFS= read -r s <&3; do
+      local td; td=$(aws ecs describe-services --cluster "$CLUSTER" --services "$s" --region "$REGION" --query 'services[0].taskDefinition' --output text)
+      patch_one "$td" "$s"
+    done 3<<<"$names"
   fi
 }
 

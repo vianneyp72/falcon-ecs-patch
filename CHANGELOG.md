@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.4
+
+- `audit` prints a green check when every Fargate service is protected.
+- `patch --all` checks the services first, so the nothing-to-patch case returns in seconds with no Docker, ECR, or sensor work.
+- `patch --all` skips unprotected ARM64 services with a message instead of stopping the whole run.
+- The execution role check now catches a role that is denied only some of the ECR pull actions.
+- The ARM64 error no longer says "v0.1".
+
 ## 0.2.3
 
 - `patch --all` prints a green check and "Nothing to patch" when every Fargate service is already protected, and says so when the cluster has no services.
