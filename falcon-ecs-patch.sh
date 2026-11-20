@@ -3,7 +3,7 @@
 # Wraps the official patching utility that ships inside the falcon-container image.
 set -euo pipefail
 
-VERSION="0.2.2"
+VERSION="0.2.3"
 INIT_NAME="crowdstrike-falcon-init-container"
 SENSOR_REPO="falcon-container"   # override with --sensor-repo (e.g. falcon-sensor/falcon-container)
 PULL_SCRIPT_URL="https://github.com/CrowdStrike/falcon-scripts/releases/latest/download/falcon-container-sensor-pull.sh"
@@ -417,10 +417,10 @@ cmd_patch() {
       local ok="OK"; if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then ok=$'\033[32m\xe2\x9c\x93\033[0m'; else ok=$'\xe2\x9c\x93'; fi
       log "$ok All Fargate services in cluster '$CLUSTER' are protected. Nothing to patch."
     else
-      while IFS= read -r s; do
+      while IFS= read -r s <&3; do
         local td; td=$(aws ecs describe-services --cluster "$CLUSTER" --services "$s" --region "$REGION" --query 'services[0].taskDefinition' --output text)
         patch_one "$td" "$s"
-      done <<<"$names"
+      done 3<<<"$names"
     fi
   fi
 }

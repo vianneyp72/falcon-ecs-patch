@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: us-east-1
-      VERSION: v0.2.2
+      VERSION: v0.2.3
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
         with:

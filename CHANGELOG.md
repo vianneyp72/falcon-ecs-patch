@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- `patch --all` prints a green check and "Nothing to patch" when every Fargate service is already protected, and says so when the cluster has no services.
+- `patch --all --deploy` now asks `[y/N]` for each service when run from a terminal (it previously stopped with "needs a terminal"). Use `--yes` in CI.
+
 ## 0.2.2
 
 - Fix `--help` crashing when `SSL_CERT_FILE` is unset.

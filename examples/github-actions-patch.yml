@@ -21,7 +21,7 @@ jobs:
     env:
       AWS_REGION: us-east-1
       FALCON_CID: ${{ secrets.FALCON_CID }}
-      VERSION: v0.2.2
+      VERSION: v0.2.3
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
